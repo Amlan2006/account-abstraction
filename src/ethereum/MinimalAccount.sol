@@ -6,8 +6,33 @@ import {PackedUserOperation} from "lib/account-abstraction/contracts/interfaces/
 import {Ownable} from "lib/openzeppelin-contracts/contracts/access/Ownable.sol";
 import {MessageHashUtils} from "lib/openzeppelin-contracts/contracts/utils/cryptography/MessageHashUtils.sol";
 import {ECDSA} from "lib/openzeppelin-contracts/contracts/utils/cryptography/ECDSA.sol";
+import {IEntryPoint} from "lib/account-abstraction/contracts/interfaces/IEntryPoint.sol";
 contract MinimalAccount is IAccount,Ownable {
-    constructor() Ownable(msg.sender) {
+    error NotFromEntryPoint();
+    error NotFromEntryPointOrOwner();
+    error CallFailed();
+     modifier onlyFromEntryPoint() {
+        if (msg.sender != address(i_entryPoint)) {
+            revert NotFromEntryPoint();
+        }
+        _;
+    }
+    modifier onlyFromEntryPointOrOwner() {
+        if (msg.sender != address(i_entryPoint) && msg.sender != owner()) {
+            revert NotFromEntryPointOrOwner();
+        }
+        _;
+    }
+    IEntryPoint private immutable i_entryPoint;
+    constructor(address entrypoint) Ownable(msg.sender) {
+        i_entryPoint = IEntryPoint(entrypoint);
+    }
+    receive() external payable {}
+    function execute(address dest, uint256 value, bytes calldata functionData) external onlyFromEntryPointOrOwner{
+        (bool success, bytes memory result) = dest.call{value: value}(functionData);
+        if(!success){
+            revert CallFailed();
+        }
     }
    function validateUserOp(
         PackedUserOperation calldata userOp,
@@ -34,5 +59,8 @@ return 1;
             (bool success, ) = payable(msg.sender).call{value: missingAccountFunds,gas: type(uint256).max}("");
             require(success, "prefund failed");
         }
+    }
+    function getEntryPoint() public view returns (address) {
+        return address(i_entryPoint);
     }
 }
